@@ -1,0 +1,63 @@
+# Environment variables (NUNCA subir credenciales)
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Datos locales y sensibles
+*.csv
+*.log
+dhcp_observer.csv
+
+# Archivos de prueba/scripts legacy
+cazador_naks.sh
+dhcp_nak_hunter.sh
+dhcp_observer.sh
+network_monitor.ps*
+
+# Certificados SSL (si están locales)
+*.pem
+*.key
+*.crt
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporal
+tmp/
+temp/
+*.tmp

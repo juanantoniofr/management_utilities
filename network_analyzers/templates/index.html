@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>DHCP Observer Pro</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      .sev-INFO {
+        background-color: #d4edda !important;
+      }
+      .sev-WARN {
+        background-color: #fff3cd !important;
+      }
+      .sev-ERROR {
+        background-color: #f8d7da !important;
+      }
+      .sev-CRIT {
+        background-color: #f5c2c7 !important;
+        font-weight: bold;
+      }
+      .live-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        background: #28a745;
+        margin-right: 5px;
+        animation: blink 1s infinite;
+      }
+      @keyframes blink {
+        0% {
+          opacity: 0.2;
+        }
+        50% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0.2;
+        }
+      }
+      .spinner-container {
+        text-align: center;
+        padding: 20px;
+      }
+      .btn-group .btn.active {
+        border: 2px solid #007bff;
+        box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+      }
+      .alert-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1050;
+        max-width: 400px;
+        animation: slideIn 0.3s ease-in;
+      }
+      @keyframes slideIn {
+        from {
+          transform: translateX(450px);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-light">
+    <div class="container mt-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>
+          Monitor de Red DHCP
+          <small id="liveLabel" class="fs-6 d-none text-success"
+            ><span class="live-indicator"></span>EN VIVO</small
+          >
+        </h2>
+        <div class="btn-group">
+          <button
+            class="btn btn-outline-primary"
+            id="btn-6h"
+            onclick="loadData(6)"
+          >
+            6h
+          </button>
+          <button
+            class="btn btn-outline-primary"
+            id="btn-12h"
+            onclick="loadData(12)"
+          >
+            12h
+          </button>
+          <button
+            class="btn btn-outline-primary active"
+            id="btn-24h"
+            onclick="loadData(24)"
+          >
+            24h
+          </button>
+          <button
+            class="btn btn-outline-primary"
+            id="btn-48h"
+            onclick="loadData(48)"
+          >
+            48h
+          </button>
+          <button class="btn btn-danger" id="liveBtn" onclick="toggleLive()">
+            Seguimiento en Vivo
+          </button>
+        </div>
+      </div>
+
+      <div class="card shadow">
+        <div id="spinnerContainer" class="spinner-container d-none">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Cargando...</span>
+          </div>
+          <p class="mt-2 text-muted">Obteniendo datos DHCP...</p>
+        </div>
+        <div class="table-responsive" id="tableContainer">
+          <table class="table table-hover mb-0">
+            <thead class="table-dark">
+              <tr>
+                <th>MAC</th>
+                <th>IP</th>
+                <th>Última Actividad</th>
+                <th>Evento</th>
+                <th>Estado</th>
+                <th>Explicación</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Contenedor para alertas -->
+      <div id="alertContainer" class="alert-container"></div>
+    </div>
+
+    <script>
+      let liveInterval = null;
+      let currentHours = 24;
+      const hoursButtons = {
+        6: "btn-6h",
+        12: "btn-12h",
+        24: "btn-24h",
+        48: "btn-48h",
+      };
+
+      function showAlert(message, type = "danger") {
+        const alertContainer = document.getElementById("alertContainer");
+        const alertId = "alert-" + Date.now();
+        const alertHTML = `
+          <div id="${alertId}" class="alert alert-${type} alert-dismissible fade show" role="alert">
+            <strong>${type === "danger" ? "✕ Error" : "ℹ Info"}:</strong> ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+        `;
+        alertContainer.insertAdjacentHTML("beforeend", alertHTML);
+        setTimeout(() => {
+          const alert = document.getElementById(alertId);
+          if (alert) alert.remove();
+        }, 5000);
+      }
+
+      function updateActiveButton(hours) {
+        // Remover clase active de todos los botones
+        Object.values(hoursButtons).forEach((btnId) => {
+          document.getElementById(btnId)?.classList.remove("active");
+        });
+        // Añadir a botón actual
+        if (hoursButtons[hours]) {
+          document.getElementById(hoursButtons[hours]).classList.add("active");
+        }
+      }
+
+      function showSpinner(show) {
+        const spinner = document.getElementById("spinnerContainer");
+        const table = document.getElementById("tableContainer");
+        if (show) {
+          spinner.classList.remove("d-none");
+          table.classList.add("d-none");
+        } else {
+          spinner.classList.add("d-none");
+          table.classList.remove("d-none");
+        }
+      }
+
+      function loadData(hours) {
+        currentHours = hours;
+        updateActiveButton(hours);
+        showSpinner(true);
+
+        fetch(`/api/status?hours=${hours}`)
+          .then((res) => {
+            if (!res.ok) {
+              return res.json().then((data) => {
+                throw new Error(data.error || `HTTP ${res.status}`);
+              });
+            }
+            return res.json();
+          })
+          .then((data) => {
+            const body = document.getElementById("tableBody");
+            if (!data || data.length === 0) {
+              body.innerHTML =
+                '<tr><td colspan="6" class="text-center text-muted">Sin eventos DHCP</td></tr>';
+            } else {
+              body.innerHTML = data
+                .map(
+                  (dev) => `
+                      <tr class="sev-${dev.sev}">
+                          <td><code>${escapeHtml(dev.mac)}</code></td>
+                          <td>${escapeHtml(dev.ip)}</td>
+                          <td>${escapeHtml(dev.time)}</td>
+                          <td><span class="badge bg-secondary">${escapeHtml(dev.last_event)}</span></td>
+                          <td>${escapeHtml(dev.sev)}</td>
+                          <td>${escapeHtml(dev.msg)}</td>
+                      </tr>
+                  `,
+                )
+                .join("");
+            }
+            showSpinner(false);
+          })
+          .catch((error) => {
+            console.error("Error loading data:", error);
+            showAlert(`Error cargando datos: ${error.message}`, "danger");
+            showSpinner(false);
+            document.getElementById("tableBody").innerHTML =
+              '<tr><td colspan="6" class="text-center text-danger">Error al cargar datos</td></tr>';
+          });
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      function toggleLive() {
+        const btn = document.getElementById("liveBtn");
+        const label = document.getElementById("liveLabel");
+        if (liveInterval) {
+          clearInterval(liveInterval);
+          liveInterval = null;
+          btn.textContent = "Seguimiento en Vivo";
+          btn.classList.replace("btn-success", "btn-danger");
+          label.classList.add("d-none");
+          showAlert("Seguimiento en vivo desactivado", "info");
+        } else {
+          loadData(1); // En vivo carga solo la última hora para ir rápido
+          liveInterval = setInterval(() => loadData(1), 5000);
+          btn.textContent = "Detener En Vivo";
+          btn.classList.replace("btn-danger", "btn-success");
+          label.classList.remove("d-none");
+          showAlert(
+            "Seguimiento en vivo activado (refrescando cada 5s)",
+            "info",
+          );
+        }
+      }
+
+      // Carga inicial
+      loadData(24);
+    </script>
+  </body>
+</html>
