@@ -615,9 +615,8 @@ def analyze_dhcp_logs(hours, slow_threshold_s, nocache=False):
     return _analyze_dhcp_logs_cached(hours, slow_threshold_s, alert_threshold)
 
 @app.route('/')
-@auth.login_required
 def index():
-    """Renderiza la interfaz web."""
+    """Renderiza la interfaz web (sin autenticación, la API pide credenciales)."""
     try:
         return render_template('index.html')
     except Exception as e:

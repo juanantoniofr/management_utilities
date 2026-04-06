@@ -81,10 +81,123 @@
           opacity: 1;
         }
       }
+      /* Estilos para el modal de login */
+      #loginModal {
+        backdrop-filter: blur(5px);
+      }
+      #loginModal .modal-content {
+        border: none;
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+        animation: modalSlideIn 0.3s ease-out;
+      }
+      @keyframes modalSlideIn {
+        from {
+          transform: scale(0.95) translateY(-30px);
+          opacity: 0;
+        }
+        to {
+          transform: scale(1) translateY(0);
+          opacity: 1;
+        }
+      }
+      #loginModal .modal-header {
+        background: linear-gradient(135deg, #0056b3 0%, #003d82 100%);
+        padding: 25px;
+        border: none;
+      }
+      #loginModal .modal-header .modal-title {
+        font-size: 1.3rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+      #loginModal .modal-body {
+        padding: 30px;
+        background-color: #f8f9fa;
+      }
+      #loginModal .form-label {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 8px;
+        font-size: 0.95rem;
+      }
+      #loginModal .form-control {
+        border: 2px solid #dee2e6;
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+      }
+      #loginModal .form-control:focus {
+        border-color: #0056b3;
+        box-shadow: 0 0 0 0.2rem rgba(0, 86, 179, 0.15);
+      }
+      #loginModal .btn-primary {
+        background: linear-gradient(135deg, #0056b3 0%, #003d82 100%);
+        border: none;
+        padding: 12px;
+        font-weight: 600;
+        border-radius: 6px;
+        transition: all 0.3s ease;
+        margin-top: 10px;
+      }
+      #loginModal .btn-primary:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 86, 179, 0.3);
+      }
+      #loginModal .btn-primary:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+      #loginModal .alert {
+        border-radius: 6px;
+        border: none;
+        animation: shake 0.3s ease-in-out;
+      }
+      @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-5px); }
+        75% { transform: translateX(5px); }
+      }
+      #loginModal .mb-3 {
+        margin-bottom: 18px;
+      }
     </style>
   </head>
   <body class="bg-light">
-    <div class="container mt-4">
+    <!-- Modal de Autenticación -->
+    <div id="loginModal" style="display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: linear-gradient(135deg, rgba(0, 86, 179, 0.3) 0%, rgba(0, 61, 130, 0.3) 100%); align-items: center; justify-content: center;">
+      <div class="modal-dialog" style="width: 100%; max-width: 420px; display: flex; align-items: center;">
+        <div class="modal-content">
+          <div class="modal-header bg-primary text-white" style="text-align: center; border: none; padding: 0;">
+            <div style="width: 100%; padding: 30px 25px; text-align: center;">
+              <div style="font-size: 3rem; margin-bottom: 15px;">🔐</div>
+              <h5 class="modal-title" style="margin: 0; font-size: 1.4rem;">DHCP Observer</h5>
+              <small style="opacity: 0.9; font-size: 0.85rem;">Monitor de Red en Tiempo Real</small>
+            </div>
+          </div>
+          <div class="modal-body">
+            <form id="loginForm" onsubmit="handleLogin(event)">
+              <div class="mb-3">
+                <label for="username" class="form-label">👤 Usuario</label>
+                <input type="text" class="form-control" id="username" placeholder="admin" required autofocus />
+              </div>
+              <div class="mb-3">
+                <label for="password" class="form-label">🔑 Contraseña</label>
+                <input type="password" class="form-control" id="password" placeholder="Ingresa tu contraseña" required />
+              </div>
+              <button type="submit" class="btn btn-primary w-100" style="font-weight: 600; padding: 11px; letter-spacing: 0.3px;">
+                ➜ Acceder
+              </button>
+            </form>
+            <div id="loginError" class="alert alert-danger mt-3 d-none" style="margin-bottom: 0;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="container mt-4" id="mainContainer" style="display: none;">
       <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>
           Monitor de Red DHCP
@@ -123,6 +236,9 @@
           </button>
           <button class="btn btn-danger" id="liveBtn" onclick="toggleLive()">
             Seguimiento en Vivo
+          </button>
+          <button class="btn btn-warning ms-2" onclick="handleLogout()">
+            Cerrar Sesión
           </button>
         </div>
       </div>
@@ -206,12 +322,89 @@
     <script>
       let liveInterval = null;
       let currentHours = 24;
+      let credentials = null;
+
       const hoursButtons = {
         6: "btn-6h",
         12: "btn-12h",
         24: "btn-24h",
         48: "btn-48h",
       };
+
+      // Verificar si ya hay credenciales guardadas
+      function checkAuthentication() {
+        credentials = sessionStorage.getItem('dhcpAuth');
+        if (credentials) {
+          showMainContent();
+          loadData(24);
+        } else {
+          showLoginModal();
+        }
+      }
+
+      function showLoginModal() {
+        const modal = document.getElementById('loginModal');
+        modal.style.display = 'flex';
+        document.getElementById('mainContainer').style.display = 'none';
+      }
+
+      function showMainContent() {
+        const modal = document.getElementById('loginModal');
+        modal.style.display = 'none';
+        document.getElementById('mainContainer').style.display = 'block';
+      }
+
+      function handleLogin(event) {
+        event.preventDefault();
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const auth = btoa(`${username}:${password}`);
+
+        // Deshabilitar botón durante el login
+        const submitBtn = event.target.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Validando...';
+
+        // Verificar las credenciales haciendo una petición de prueba
+        fetch('/api/status?hours=1', {
+          headers: {
+            'Authorization': `Basic ${auth}`
+          }
+        })
+        .then(async res => {
+          if (res.status === 401) {
+            document.getElementById('loginError').innerHTML = 'Usuario o contraseña incorrectos';
+            document.getElementById('loginError').classList.remove('d-none');
+            document.getElementById('password').value = '';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Iniciar Sesión';
+            return;
+          }
+          if (res.ok) {
+            // Credenciales válidas
+            credentials = auth;
+            sessionStorage.setItem('dhcpAuth', auth);
+            document.getElementById('password').value = '';
+            document.getElementById('loginError').classList.add('d-none');
+            
+            // Cerrar modal y mostrar contenido
+            showMainContent();
+            
+            // Cargar datos
+            setTimeout(() => loadData(24), 100);
+            return;
+          }
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Iniciar Sesión';
+        })
+        .catch(err => {
+          console.error('Login error:', err);
+          document.getElementById('loginError').innerHTML = 'Error de conexión: ' + err.message;
+          document.getElementById('loginError').classList.remove('d-none');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Iniciar Sesión';
+        });
+      }
 
       function showAlert(message, type = "danger") {
         const alertContainer = document.getElementById("alertContainer");
@@ -257,7 +450,11 @@
         updateActiveButton(hours);
         showSpinner(true);
 
-        fetch(`/api/status?hours=${hours}`)
+        fetch(`/api/status?hours=${hours}`, {
+          headers: {
+            'Authorization': `Basic ${credentials}`
+          }
+        })
           .then((res) => {
             if (!res.ok) {
               return res.json().then((data) => {
@@ -377,8 +574,22 @@
         }
       }
 
-      // Carga inicial
-      loadData(24);
+      function handleLogout() {
+        sessionStorage.removeItem('dhcpAuth');
+        credentials = null;
+        if (liveInterval) {
+          clearInterval(liveInterval);
+          liveInterval = null;
+        }
+        showLoginModal();
+        document.getElementById('username').value = '';
+        document.getElementById('password').value = '';
+        document.getElementById('loginError').classList.add('d-none');
+        showAlert('Sesión cerrada', 'info');
+      }
+
+      // Carga inicial - verificar autenticación
+      checkAuthentication();
     </script>
   </body>
 </html>
