@@ -2,7 +2,7 @@
 
 Monitor web en tiempo real para eventos DHCP ISC con autenticación HTTP Basic + SSL/TLS.
 
-**Descripción:** Herramienta para visualizar y monitorear eventos DHCP (DISCOVER, OFFER, REQUEST, ACK, NAK) desde el servidor ISC DHCP. Interfaz web intuitiva con clasificación de severidad, seguimiento en vivo y análisis de histórico de hasta 30 días.
+**Descripción:** Herramienta para **analizar** y monitorear logs de ISC DHCP y detectar **problemas de red** a partir de ciclos DORA (DISCOVER→OFFER→REQUEST→ACK), por ejemplo: ciclos lentos (>10s), DISCOVER sin OFFER, REQUEST sin ACK o NAK. Interfaz web por secciones, seguimiento en vivo y análisis de histórico de hasta 30 días.
 
 ## Características
 
@@ -99,7 +99,12 @@ python3 ogDHCP-Observer.py
 ```bash
 export FLASK_ENV=production
 python3 ogDHCP-Observer.py
-# Requiere certificados SSL en /etc/ssl/certs/
+# Requiere cert.pem y key.pem (autofirmados o CA interna) en el directorio del proyecto.
+# Puedes generarlos con: ./generate_certs.sh
+# Opcional:
+#   export DHCP_SSL_CERT=/ruta/cert.pem
+#   export DHCP_SSL_KEY=/ruta/key.pem
+#   export DHCP_HTTPS_PORT=5443
 ```
 
 **Con Gunicorn:**
@@ -115,27 +120,74 @@ gunicorn --bind 0.0.0.0:5000 --workers 4 ogDHCP-Observer:app
 
 ### GET `/api/status?hours=24`
 
-Retorna lista JSON de dispositivos DHCP en las últimas N horas.
+Retorna un análisis JSON por **secciones** (una por cada tipo de problema detectado) y una sección final de **ciclos exitosos**.
 
 **Parámetros:**
 
 - `hours` (int): 1-730 (default: 24)
 
-**Response:**
+**Response (nuevo formato):**
 
 ```json
-[
-  {
-    "mac": "00:11:22:33:44:55",
-    "ip": "192.168.1.100",
-    "last_event": "DHCPACK",
-    "time": "Mar 30 10:45:32",
-    "count": 0,
-    "sev": "INFO",
-    "msg": "Conexión establecida correctamente"
-  }
-]
+{
+  "meta": {
+    "hours": 24,
+    "generated_at": "2026-04-06T10:20:30+00:00",
+    "slow_threshold_s": 10
+  },
+  "sections": [
+    {
+      "id": "slow_dora",
+      "title": "Ciclos DORA lentos (>10s)",
+      "severity": "WARN",
+      "count": 1,
+      "items": [
+        {
+          "mac": "00:11:22:33:44:55",
+          "ip": "192.168.1.100",
+          "start": "2026-04-06 10:00:00",
+          "end": "2026-04-06 10:00:15",
+          "duration_s": 15,
+          "t_discover_ack_s": 15,
+          "is_slow": true,
+          "stage": "ACK",
+          "explanation": "Ciclo exitoso pero lento: DISCOVER→ACK = 15s (umbral 10s)"
+        }
+      ]
+    },
+    {
+      "id": "discover_no_offer",
+      "title": "DISCOVER sin OFFER (nadie ofrece IP)",
+      "severity": "CRIT",
+      "count": 0,
+      "items": []
+    },
+    {
+      "id": "success",
+      "title": "Ciclos exitosos (ACK)",
+      "severity": "INFO",
+      "count": 3,
+      "items": [
+        {
+          "mac": "00:11:22:33:44:55",
+          "ip": "192.168.1.100",
+          "start": "2026-04-06 10:00:00",
+          "end": "2026-04-06 10:00:15",
+          "duration_s": 15,
+          "t_discover_ack_s": 15,
+          "is_slow": true,
+          "stage": "ACK",
+          "explanation": "Ciclo DHCP completado correctamente"
+        }
+      ]
+    }
+  ]
+}
 ```
+
+Notas:
+- Los ciclos "lentos pero exitosos" aparecen tanto en "lentos" como en "exitosos" (marcados con `is_slow`).
+- En modo “en vivo” (cuando `hours=1`) el backend evita caché para refrescar rápido.
 
 **Códigos de Error:**
 

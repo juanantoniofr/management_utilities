@@ -10,16 +10,30 @@
     <style>
       .sev-INFO {
         background-color: #d4edda !important;
+        border-left: 4px solid #28a745 !important;
       }
       .sev-WARN {
         background-color: #fff3cd !important;
+        border-left: 4px solid #ffc107 !important;
+        font-weight: 500;
       }
       .sev-ERROR {
         background-color: #f8d7da !important;
+        border-left: 4px solid #dc3545 !important;
+        font-weight: 600;
       }
       .sev-CRIT {
-        background-color: #f5c2c7 !important;
+        background-color: #d9534f !important;
+        color: white !important;
+        border-left: 6px solid #721c24 !important;
         font-weight: bold;
+      }
+      .sev-CRIT code {
+        color: #f0f0f0 !important;
+        background-color: rgba(0,0,0,0.3) !important;
+      }
+      .sev-CRIT .badge {
+        background-color: #721c24 !important;
       }
       .live-indicator {
         width: 12px;
@@ -120,16 +134,64 @@
           </div>
           <p class="mt-2 text-muted">Obteniendo datos DHCP...</p>
         </div>
-        <div class="table-responsive" id="tableContainer">
+
+        <!-- Explicación del ciclo DORA -->
+        <div class="card-body bg-info bg-opacity-10 border-bottom">
+          <h5 class="card-title">Ciclo DORA (DHCP)</h5>
+          <p class="mb-2">El protocolo DHCP sigue este ciclo obligatorio para asignar IPs:</p>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div>
+                <strong>1️⃣ DISCOVER</strong> – Cliente emite solicitud de IP (broadcast)<br/>
+                <strong>2️⃣ OFFER</strong> – Servidor responde con una IP disponible<br/>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div>
+                <strong>3️⃣ REQUEST</strong> – Cliente confirma y solicita esa IP<br/>
+                <strong>4️⃣ ACK</strong> – Servidor confirma la asignación (ciclo exitoso)<br/>
+              </div>
+            </div>
+          </div>
+          
+          <div class="mt-4 pt-3 border-top">
+            <h6 class="mb-3">📊 Métricas Analizadas para Detectar Problemas:</h6>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div class="alert alert-light mb-0">
+                  <strong>Tiempos por fase:</strong>
+                  <ul class="mb-0 mt-2 ps-3 small">
+                    <li><code>t_discover_ack_s</code> – Tiempo total DISCOVER → ACK</li>
+                    <li><code>t_offer_request_s</code> – Tiempo OFFER → REQUEST</li>
+                    <li><code>t_request_ack_s</code> – Tiempo REQUEST → ACK</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="alert alert-light mb-0">
+                  <strong>Condiciones de error:</strong>
+                  <ul class="mb-0 mt-2 ps-3 small">
+                    <li>❌ DISCOVER sin OFFER → servidor no responde</li>
+                    <li>❌ REQUEST sin ACK → servidor no confirma</li>
+                    <li>❌ Presencia de NAK → conflicto de IP / rechazo</li>
+                    <li>⏱️ Ciclo DORA lento → t_discover_ack_s > umbral (10s)</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-responsive" id="tableContainer" style="margin-top: 2rem;">
           <table class="table table-hover mb-0">
             <thead class="table-dark">
               <tr>
-                <th>MAC</th>
-                <th>IP</th>
-                <th>Última Actividad</th>
-                <th>Evento</th>
-                <th>Estado</th>
-                <th>Explicación</th>
+                <th style="width: 10%">MAC / Hostname</th>
+                <th style="width: 10%">IP</th>
+                <th style="width: 10%">Última Actividad</th>
+                <th style="width: 10%">Evento</th>
+                <th style="width: 5%">Estado</th>
+                <th style="width: 50%">Explicación</th>
               </tr>
             </thead>
             <tbody id="tableBody"></tbody>
@@ -205,23 +267,63 @@
             return res.json();
           })
           .then((data) => {
+            // Soporta 2 formatos:
+            // 1) legacy: array de filas
+            // 2) actual: { meta: {...}, sections: [{severity, items: [...]}, ...] }
+            const normalizeRows = (payload) => {
+              if (!payload) return [];
+              if (Array.isArray(payload)) return payload;
+              if (payload.sections && Array.isArray(payload.sections)) {
+                const out = [];
+                payload.sections.forEach((sec) => {
+                  const sev = sec.severity || "INFO";
+                  const items = Array.isArray(sec.items) ? sec.items : [];
+                  items.forEach((it) => {
+                    // Mostrar MAC + hostname (si existe)
+                    let macLabel = it.mac || "-";
+                    if (it.hostname) {
+                      macLabel = `${it.mac} [${it.hostname}]`;
+                    }
+                    out.push({
+                      sev,
+                      mac: it.mac || "-",
+                      mac_label: macLabel,
+                      hostname: it.hostname || "-",
+                      is_known: it.is_known || false,
+                      ip: it.ip || "-",
+                      time: it.end || it.start || "-",
+                      last_event: it.stage || sec.id || "-",
+                      msg: it.explanation || "-",
+                    });
+                  });
+                });
+                return out;
+              }
+              return [];
+            };
+
+            const rows = normalizeRows(data);
             const body = document.getElementById("tableBody");
-            if (!data || data.length === 0) {
+            if (!rows || rows.length === 0) {
               body.innerHTML =
                 '<tr><td colspan="6" class="text-center text-muted">Sin eventos DHCP</td></tr>';
             } else {
-              body.innerHTML = data
+              body.innerHTML = rows
                 .map(
-                  (dev) => `
-                      <tr class="sev-${dev.sev}">
-                          <td><code>${escapeHtml(dev.mac)}</code></td>
+                  (dev) => {
+                    const bgClass = dev.is_known ? '' : ' table-warning';
+                    const unknownBadge = dev.is_known ? '' : ' ⚠ UNKNOWN';
+                    return `
+                      <tr class="sev-${dev.sev}${bgClass}">
+                          <td><strong>${getSevIcon(dev.sev)}</strong> <code>${escapeHtml(dev.mac_label)}</code>${unknownBadge}</td>
                           <td>${escapeHtml(dev.ip)}</td>
                           <td>${escapeHtml(dev.time)}</td>
                           <td><span class="badge bg-secondary">${escapeHtml(dev.last_event)}</span></td>
-                          <td>${escapeHtml(dev.sev)}</td>
+                          <td><strong>${escapeHtml(dev.sev)}</strong></td>
                           <td>${escapeHtml(dev.msg)}</td>
                       </tr>
-                  `,
+                    `;
+                  },
                 )
                 .join("");
             }
@@ -240,6 +342,16 @@
         const div = document.createElement("div");
         div.textContent = text;
         return div.innerHTML;
+      }
+
+      function getSevIcon(sev) {
+        const icons = {
+          'INFO': '✓',
+          'WARN': '⚠',
+          'ERROR': '✕',
+          'CRIT': '⚠ CRÍTICO'
+        };
+        return icons[sev] || '?';
       }
 
       function toggleLive() {
